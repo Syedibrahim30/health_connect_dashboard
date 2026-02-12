@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.health_connect_dashboard"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -24,8 +24,8 @@ android {
         applicationId = "com.example.health_connect_dashboard"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 26
+        targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -41,4 +41,7 @@ android {
 
 flutter {
     source = "../.."
+}
+dependencies {
+    implementation("androidx.health.connect:connect-client:1.1.0-alpha07")
 }
