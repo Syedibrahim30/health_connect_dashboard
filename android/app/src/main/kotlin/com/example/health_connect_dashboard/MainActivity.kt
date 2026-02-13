@@ -81,7 +81,8 @@ class MainActivity : FlutterActivity() {
         val client = healthConnectClient ?: return
 
         val endTime = Instant.now()
-        val startTime = endTime.minus(1, ChronoUnit.MINUTES)
+        // Widen window to 15 minutes to catch delayed syncs from other apps
+        val startTime = endTime.minus(15, ChronoUnit.MINUTES)
 
         // Fetch Steps
         try {

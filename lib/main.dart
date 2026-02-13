@@ -7,13 +7,9 @@ import 'core/constants/app_constants.dart';
 import 'core/routes/app_routes.dart';
 import 'core/utils/salt_utils.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize GetStorage
   await GetStorage.init();
-
-  // Initialize SALT for anti-plagiarism
   SaltUtils.getSalt();
 
   runApp(const MyApp());
