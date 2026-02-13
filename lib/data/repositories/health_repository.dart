@@ -1,10 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:get_storage/get_storage.dart';
-import 'package:health/health.dart';
 
-import '../../core/constants/app_constants.dart';
-import '../../core/utils/date_utils.dart' as app_date_utils;
 import '../../domain/entities/health_data.dart';
 
 abstract class HealthRepository {
@@ -15,106 +13,150 @@ abstract class HealthRepository {
   Future<List<HeartRateData>> getHeartRateData(DateTime start, DateTime end);
   Future<int> getTodaySteps();
   Future<HeartRateData?> getLatestHeartRate();
+  void startPolling();
+  void stopPolling();
 }
 
 class HealthRepositoryImpl implements HealthRepository {
-  final Health _health = Health();
   final GetStorage _storage = GetStorage();
 
-  // Data types
-  static final List<HealthDataType> _types = [
-    HealthDataType.STEPS,
-    HealthDataType.HEART_RATE,
-  ];
+  // Platform channels for native Android integration (Passive Listener)
+  static const MethodChannel _methodChannel = MethodChannel(
+    'health_connect_dashboard/health',
+  );
+  static const EventChannel _eventChannel = EventChannel(
+    'health_connect_dashboard/health_stream',
+  );
 
   // Stream controller for realtime updates
   final _healthDataController = StreamController<HealthDataUpdate>.broadcast();
-  Timer? _pollingTimer;
-  DateTime? _lastFetchTime;
+  StreamSubscription? _nativeStreamSubscription;
   final Set<String> _processedRecordIds = {};
 
-  HealthRepositoryImpl() {
-    _initializePolling();
+  HealthRepositoryImpl();
+
+  @override
+  void startPolling() {
+    if (_nativeStreamSubscription != null) return; // Already listening
+
+    print('📡 Starting native Health Connect listener...');
+
+    // Subscribe to native EventChannel (acts as Passive Listener)
+    _nativeStreamSubscription = _eventChannel.receiveBroadcastStream().listen(
+      (dynamic event) {
+        _handleNativeHealthData(event);
+      },
+      onError: (dynamic error) {
+        print('❌ Error receiving native health data: $error');
+      },
+    );
   }
 
-  void _initializePolling() {
-    _pollingTimer = Timer.periodic(AppConstants.pollingInterval, (_) {
-      _pollForChanges();
-    });
+  @override
+  void stopPolling() {
+    print('🛑 Stopping native Health Connect listener...');
+    _nativeStreamSubscription?.cancel();
+    _nativeStreamSubscription = null;
   }
 
-  Future<void> _pollForChanges() async {
+  void _handleNativeHealthData(dynamic data) {
     try {
-      final now = DateTime.now();
-      final start = _lastFetchTime ?? now.subtract(const Duration(minutes: 1));
+      final Map<dynamic, dynamic> eventData = data as Map<dynamic, dynamic>;
 
-      // Fetch new data
-      final steps = await getStepsData(start, now);
-      final heartRate = await getHeartRateData(start, now);
+      List<StepsData>? steps;
+      List<HeartRateData>? heartRate;
 
-      // Filter out already processed records
-      final newSteps = steps
-          .where(
-            (s) =>
-                s.recordId != null && !_processedRecordIds.contains(s.recordId),
-          )
-          .toList();
+      // Parse steps data
+      if (eventData.containsKey('steps')) {
+        final stepsRaw = eventData['steps'] as List<dynamic>;
+        steps = stepsRaw
+            .map((item) {
+              final map = item as Map<dynamic, dynamic>;
+              final recordId = map['recordId'] as String;
 
-      final newHeartRate = heartRate
-          .where(
-            (hr) =>
-                hr.recordId != null &&
-                !_processedRecordIds.contains(hr.recordId),
-          )
-          .toList();
+              // De-duplicate
+              if (_processedRecordIds.contains(recordId)) {
+                return null;
+              }
+              _processedRecordIds.add(recordId);
 
-      // Add to processed set
-      for (var s in newSteps) {
-        if (s.recordId != null) _processedRecordIds.add(s.recordId!);
+              return StepsData(
+                timestamp: DateTime.fromMillisecondsSinceEpoch(
+                  map['timestamp'] as int,
+                ),
+                count: map['count'] as int,
+                recordId: recordId,
+              );
+            })
+            .whereType<StepsData>()
+            .toList();
       }
-      for (var hr in newHeartRate) {
-        if (hr.recordId != null) _processedRecordIds.add(hr.recordId!);
+
+      // Parse heart rate data
+      if (eventData.containsKey('heartRate')) {
+        final hrRaw = eventData['heartRate'] as List<dynamic>;
+        heartRate = hrRaw
+            .map((item) {
+              final map = item as Map<dynamic, dynamic>;
+              final recordId = map['recordId'] as String;
+
+              // De-duplicate
+              if (_processedRecordIds.contains(recordId)) {
+                return null;
+              }
+              _processedRecordIds.add(recordId);
+
+              return HeartRateData(
+                timestamp: DateTime.fromMillisecondsSinceEpoch(
+                  map['timestamp'] as int,
+                ),
+                bpm: map['bpm'] as int,
+                recordId: recordId,
+              );
+            })
+            .whereType<HeartRateData>()
+            .toList();
       }
 
       // Emit update if we have new data
-      if (newSteps.isNotEmpty || newHeartRate.isNotEmpty) {
+      if ((steps != null && steps.isNotEmpty) ||
+          (heartRate != null && heartRate.isNotEmpty)) {
+        print(
+          '✅ Emitting health data update: ${steps?.length ?? 0} steps, ${heartRate?.length ?? 0} HR readings',
+        );
+
         _healthDataController.add(
           HealthDataUpdate(
-            steps: newSteps.isEmpty ? null : newSteps,
-            heartRate: newHeartRate.isEmpty ? null : newHeartRate,
-            timestamp: now,
+            steps: steps,
+            heartRate: heartRate,
+            timestamp: DateTime.now(),
           ),
         );
       }
 
-      _lastFetchTime = now;
-
       // Clean up old processed IDs (keep last 1000)
       if (_processedRecordIds.length > 1000) {
         final toRemove = _processedRecordIds.length - 1000;
-        _processedRecordIds.removeAll(_processedRecordIds.take(toRemove));
+        final idsToRemove = _processedRecordIds.take(toRemove).toList();
+        _processedRecordIds.removeAll(idsToRemove);
       }
     } catch (e) {
-      print('Error polling for changes: $e');
+      print('❌ Error parsing native health data: $e');
     }
   }
 
   @override
   Future<HealthPermissionStatus> requestPermissions() async {
     try {
-      final permissions = [HealthDataAccess.READ, HealthDataAccess.READ];
-
-      final granted = await _health.requestAuthorization(
-        _types,
-        permissions: permissions,
-      );
+      final result = await _methodChannel.invokeMethod('requestPermissions');
+      final granted = result as bool? ?? false;
 
       return HealthPermissionStatus(
         stepsGranted: granted,
         heartRateGranted: granted,
       );
     } catch (e) {
-      print('Error requesting permissions: $e');
+      print('❌ Error requesting permissions: $e');
       return HealthPermissionStatus(
         stepsGranted: false,
         heartRateGranted: false,
@@ -125,17 +167,15 @@ class HealthRepositoryImpl implements HealthRepository {
   @override
   Future<HealthPermissionStatus> checkPermissions() async {
     try {
-      final stepsGranted =
-          await _health.hasPermissions([HealthDataType.STEPS]) ?? false;
-      final heartRateGranted =
-          await _health.hasPermissions([HealthDataType.HEART_RATE]) ?? false;
+      final result = await _methodChannel.invokeMethod('checkPermissions');
+      final Map<dynamic, dynamic> permissions = result as Map<dynamic, dynamic>;
 
       return HealthPermissionStatus(
-        stepsGranted: stepsGranted,
-        heartRateGranted: heartRateGranted,
+        stepsGranted: permissions['stepsGranted'] as bool? ?? false,
+        heartRateGranted: permissions['heartRateGranted'] as bool? ?? false,
       );
     } catch (e) {
-      print('Error checking permissions: $e');
+      print('❌ Error checking permissions: $e');
       return HealthPermissionStatus(
         stepsGranted: false,
         heartRateGranted: false,
@@ -150,25 +190,9 @@ class HealthRepositoryImpl implements HealthRepository {
 
   @override
   Future<List<StepsData>> getStepsData(DateTime start, DateTime end) async {
-    try {
-      final healthData = await _health.getHealthDataFromTypes(
-        types: [HealthDataType.STEPS],
-        startTime: start,
-        endTime: end,
-      );
-
-      return healthData.map((data) {
-        final value = data.value as NumericHealthValue;
-        return StepsData(
-          timestamp: data.dateTo,
-          count: value.numericValue.toInt(),
-          recordId: data.uuid,
-        );
-      }).toList();
-    } catch (e) {
-      print('Error fetching steps data: $e');
-      return [];
-    }
+    // Historical data fetch would need additional native implementation
+    // For MVP, this returns empty - data comes through stream
+    return [];
   }
 
   @override
@@ -176,38 +200,18 @@ class HealthRepositoryImpl implements HealthRepository {
     DateTime start,
     DateTime end,
   ) async {
-    try {
-      final healthData = await _health.getHealthDataFromTypes(
-        types: [HealthDataType.HEART_RATE],
-        startTime: start,
-        endTime: end,
-      );
-
-      return healthData.map((data) {
-        final value = data.value as NumericHealthValue;
-        return HeartRateData(
-          timestamp: data.dateTo,
-          bpm: value.numericValue.toInt(),
-          recordId: data.uuid,
-        );
-      }).toList();
-    } catch (e) {
-      print('Error fetching heart rate data: $e');
-      return [];
-    }
+    // Historical data fetch would need additional native implementation
+    // For MVP, this returns empty - data comes through stream
+    return [];
   }
 
   @override
   Future<int> getTodaySteps() async {
     try {
-      final now = DateTime.now();
-      final midnight = app_date_utils.DateUtils.startOfToday;
-
-      final steps = await getStepsData(midnight, now);
-
-      return steps.fold<int>(0, (sum, data) => sum + data.count);
+      final result = await _methodChannel.invokeMethod('getTodaySteps');
+      return result as int? ?? 0;
     } catch (e) {
-      print('Error getting today steps: $e');
+      print('❌ Error getting today steps: $e');
       return 0;
     }
   }
@@ -215,23 +219,27 @@ class HealthRepositoryImpl implements HealthRepository {
   @override
   Future<HeartRateData?> getLatestHeartRate() async {
     try {
-      final now = DateTime.now();
-      final start = now.subtract(const Duration(hours: 1));
+      final result = await _methodChannel.invokeMethod('getLatestHeartRate');
 
-      final heartRates = await getHeartRateData(start, now);
+      if (result == null) return null;
 
-      if (heartRates.isEmpty) return null;
+      final Map<dynamic, dynamic> data = result as Map<dynamic, dynamic>;
 
-      heartRates.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      return heartRates.first;
+      return HeartRateData(
+        timestamp: DateTime.fromMillisecondsSinceEpoch(
+          data['timestamp'] as int,
+        ),
+        bpm: data['bpm'] as int,
+        recordId: data['recordId'] as String,
+      );
     } catch (e) {
-      print('Error getting latest heart rate: $e');
+      print('❌ Error getting latest heart rate: $e');
       return null;
     }
   }
 
   void dispose() {
-    _pollingTimer?.cancel();
+    stopPolling();
     _healthDataController.close();
   }
 }

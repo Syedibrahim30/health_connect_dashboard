@@ -1,13 +1,12 @@
 import 'dart:async';
-
 import 'package:get/get.dart';
-
-import '../../core/constants/app_constants.dart';
-import '../../core/utils/date_utils.dart' as app_date_utils;
 import '../../data/repositories/health_repository.dart';
 import '../../data/repositories/sim_source.dart';
-import '../../domain/entities/chart_data.dart';
 import '../../domain/entities/health_data.dart';
+import '../../domain/entities/chart_data.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/utils/date_utils.dart' as app_date_utils;
+import 'performance_controller.dart';
 
 class HealthController extends GetxController {
   final HealthRepository _repository;
@@ -16,7 +15,7 @@ class HealthController extends GetxController {
 
   // Observable state
   final permissionStatus = Rx<HealthPermissionStatus>(
-    HealthPermissionStatus(stepsGranted: false, heartRateGranted: false),
+      HealthPermissionStatus(stepsGranted: false, heartRateGranted: false)
   );
 
   final currentSteps = 0.obs;
@@ -48,9 +47,10 @@ class HealthController extends GetxController {
   Future<void> _initialize() async {
     await checkPermissions();
 
+    // Don't auto-start polling - wait for user to enable SimSource or grant permissions
     if (permissionStatus.value.allGranted) {
       await loadInitialData();
-      _subscribeToHealthData();
+      // Don't automatically subscribe - let user choose
     }
   }
 
@@ -73,6 +73,8 @@ class HealthController extends GetxController {
 
       if (status.allGranted) {
         await loadInitialData();
+        // Start polling after permissions granted
+        _repository.startPolling();
         _subscribeToHealthData();
       }
     } catch (e) {
@@ -97,7 +99,7 @@ class HealthController extends GetxController {
       // Load historical data for charts
       final now = DateTime.now();
       final chartStart = app_date_utils.DateUtils.getChartStartTime(
-        AppConstants.stepsChartWindowMinutes,
+          AppConstants.stepsChartWindowMinutes
       );
 
       final stepsData = await _repository.getStepsData(chartStart, now);
@@ -147,13 +149,9 @@ class HealthController extends GetxController {
     if (update.steps != null && update.steps!.isNotEmpty) {
       _stepsHistory.addAll(update.steps!);
 
-      // Recalculate today's total
-      final today = app_date_utils.DateUtils.startOfToday;
-      final todaySteps = _stepsHistory
-          .where((s) => s.timestamp.isAfter(today))
-          .fold<int>(0, (sum, s) => sum + s.count);
-
-      currentSteps.value = todaySteps;
+      // Get the latest step count (already cumulative from source)
+      final latest = update.steps!.last;
+      currentSteps.value = latest.count;
     }
 
     // Update heart rate
@@ -183,22 +181,19 @@ class HealthController extends GetxController {
 
     // Update steps chart
     final stepsStart = app_date_utils.DateUtils.getChartStartTime(
-      AppConstants.stepsChartWindowMinutes,
+        AppConstants.stepsChartWindowMinutes
     );
 
-    final recentSteps =
-        _stepsHistory.where((s) => s.timestamp.isAfter(stepsStart)).toList()
-          ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final recentSteps = _stepsHistory
+        .where((s) => s.timestamp.isAfter(stepsStart))
+        .toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     if (recentSteps.isNotEmpty) {
-      var stepsPoints = recentSteps
-          .map(
-            (s) => ChartDataPoint(
-              timestamp: s.timestamp,
-              value: s.count.toDouble(),
-            ),
-          )
-          .toList();
+      var stepsPoints = recentSteps.map((s) => ChartDataPoint(
+        timestamp: s.timestamp,
+        value: s.count.toDouble(),
+      )).toList();
 
       // Decimate if too many points
       if (stepsPoints.length > AppConstants.maxChartPoints) {
@@ -208,10 +203,7 @@ class HealthController extends GetxController {
       stepsChartData.value = ChartData(
         points: stepsPoints,
         minValue: 0,
-        maxValue: recentSteps
-            .map((s) => s.count)
-            .reduce((a, b) => a > b ? a : b)
-            .toDouble(),
+        maxValue: recentSteps.map((s) => s.count).reduce((a, b) => a > b ? a : b).toDouble(),
         startTime: stepsStart,
         endTime: now,
       );
@@ -219,22 +211,19 @@ class HealthController extends GetxController {
 
     // Update heart rate chart
     final hrStart = app_date_utils.DateUtils.getChartStartTime(
-      AppConstants.heartRateChartWindowMinutes,
+        AppConstants.heartRateChartWindowMinutes
     );
 
-    final recentHR =
-        _heartRateHistory.where((hr) => hr.timestamp.isAfter(hrStart)).toList()
-          ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final recentHR = _heartRateHistory
+        .where((hr) => hr.timestamp.isAfter(hrStart))
+        .toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     if (recentHR.isNotEmpty) {
-      var hrPoints = recentHR
-          .map(
-            (hr) => ChartDataPoint(
-              timestamp: hr.timestamp,
-              value: hr.bpm.toDouble(),
-            ),
-          )
-          .toList();
+      var hrPoints = recentHR.map((hr) => ChartDataPoint(
+        timestamp: hr.timestamp,
+        value: hr.bpm.toDouble(),
+      )).toList();
 
       // Decimate if too many points
       if (hrPoints.length > AppConstants.maxChartPoints) {
@@ -243,18 +232,8 @@ class HealthController extends GetxController {
 
       heartRateChartData.value = ChartData(
         points: hrPoints,
-        minValue:
-            recentHR
-                .map((hr) => hr.bpm)
-                .reduce((a, b) => a < b ? a : b)
-                .toDouble() -
-            10,
-        maxValue:
-            recentHR
-                .map((hr) => hr.bpm)
-                .reduce((a, b) => a > b ? a : b)
-                .toDouble() +
-            10,
+        minValue: recentHR.map((hr) => hr.bpm).reduce((a, b) => a < b ? a : b).toDouble() - 10,
+        maxValue: recentHR.map((hr) => hr.bpm).reduce((a, b) => a > b ? a : b).toDouble() + 10,
         startTime: hrStart,
         endTime: now,
       );
@@ -265,13 +244,26 @@ class HealthController extends GetxController {
     isSimulationMode.value = !isSimulationMode.value;
 
     if (isSimulationMode.value) {
-      SimSource.enable();
+      // Stop real health polling
+      _repository.stopPolling();
       _healthDataSubscription?.cancel();
+
+      // Reset performance metrics for clean measurement
+      Get.find<PerformanceController>().reset();
+
+      // Start simulation
+      SimSource.enable();
       _subscribeToSimData();
     } else {
+      // Stop simulation
       SimSource.disable();
       _simDataSubscription?.cancel();
-      _subscribeToHealthData();
+
+      // Resume real health polling if permissions granted
+      if (permissionStatus.value.allGranted) {
+        _repository.startPolling();
+        _subscribeToHealthData();
+      }
     }
   }
 
@@ -280,6 +272,8 @@ class HealthController extends GetxController {
     _healthDataSubscription?.cancel();
     _simDataSubscription?.cancel();
     _chartUpdateTimer?.cancel();
+    _repository.stopPolling();
+    SimSource.disable();
     super.onClose();
   }
 }

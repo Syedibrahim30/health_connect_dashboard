@@ -33,6 +33,10 @@ class _InteractiveChartState extends State<InteractiveChart> {
   double _baseScaleX = 1.0;
   double _baseScaleY = 1.0;
 
+  // Throttle updates to reduce jank
+  DateTime _lastUpdateTime = DateTime.now();
+  static const _updateThrottle = Duration(milliseconds: 16); // ~60fps
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -59,25 +63,27 @@ class _InteractiveChartState extends State<InteractiveChart> {
             ),
           ),
           Expanded(
-            child: GestureDetector(
-              onScaleStart: _handleScaleStart,
-              onScaleUpdate: _handleScaleUpdate,
-              onScaleEnd: _handleScaleEnd,
-              onTapDown: _handleTapDown,
-              onTapUp: _handleTapUp,
-              child: CustomPaint(
-                size: Size.infinite,
-                painter: HealthChartPainter(
-                  data: widget.data,
-                  lineColor: widget.lineColor,
-                  fillColor: widget.fillColor,
-                  gridColor: Colors.grey.shade300,
-                  title: widget.title,
-                  translateX: _translateX,
-                  translateY: _translateY,
-                  scaleX: _scaleX,
-                  scaleY: _scaleY,
-                  tooltipPosition: _tooltipPosition,
+            child: RepaintBoundary(
+              child: GestureDetector(
+                onScaleStart: _handleScaleStart,
+                onScaleUpdate: _handleScaleUpdate,
+                onScaleEnd: _handleScaleEnd,
+                onTapDown: _handleTapDown,
+                onTapUp: _handleTapUp,
+                child: CustomPaint(
+                  size: Size.infinite,
+                  painter: HealthChartPainter(
+                    data: widget.data,
+                    lineColor: widget.lineColor,
+                    fillColor: widget.fillColor,
+                    gridColor: Colors.grey.shade300,
+                    title: widget.title,
+                    translateX: _translateX,
+                    translateY: _translateY,
+                    scaleX: _scaleX,
+                    scaleY: _scaleY,
+                    tooltipPosition: _tooltipPosition,
+                  ),
                 ),
               ),
             ),
@@ -93,6 +99,13 @@ class _InteractiveChartState extends State<InteractiveChart> {
   }
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
+    // Throttle updates to reduce jank
+    final now = DateTime.now();
+    if (now.difference(_lastUpdateTime) < _updateThrottle) {
+      return;
+    }
+    _lastUpdateTime = now;
+
     setState(() {
       // Pan
       _translateX += details.focalPointDelta.dx;
