@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-
+import 'package:gap/gap.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/date_utils.dart' as app_date_utils;
 import '../../controllers/health_controller.dart';
@@ -40,16 +40,15 @@ class DashboardScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Current Values Cards
                   Row(
                     children: [
                       Expanded(child: _buildStepsCard(healthController)),
-                      const SizedBox(width: 16),
+                      Gap(16),
                       Expanded(child: _buildHeartRateCard(healthController)),
                     ],
                   ),
 
-                  const SizedBox(height: 24),
+                  const Gap(24),
 
                   // Steps Chart
                   InteractiveChart(
@@ -61,7 +60,7 @@ class DashboardScreen extends StatelessWidget {
                     height: AppConstants.chartHeight,
                   ),
 
-                  const SizedBox(height: 24),
+                  const Gap(24),
 
                   // Heart Rate Chart
                   InteractiveChart(
@@ -73,7 +72,7 @@ class DashboardScreen extends StatelessWidget {
                     height: AppConstants.chartHeight,
                   ),
 
-                  const SizedBox(height: 24),
+                  const Gap(24),
 
                   // Error Message
                   if (healthController.errorMessage.value != null)
@@ -108,11 +107,11 @@ class DashboardScreen extends StatelessWidget {
                   color: AppConstants.stepsColor,
                   size: 24,
                 ),
-                const SizedBox(width: 8),
+                const Gap(8),
                 const Text('Steps Today', style: AppConstants.subtitleStyle),
               ],
             ),
-            const SizedBox(height: 12),
+            const Gap(12),
             Obx(
               () => Text(
                 controller.currentSteps.value.toString(),
@@ -145,11 +144,11 @@ class DashboardScreen extends StatelessWidget {
                   color: AppConstants.heartRateColor,
                   size: 24,
                 ),
-                const SizedBox(width: 8),
+                const Gap(8),
                 const Text('Heart Rate', style: AppConstants.subtitleStyle),
               ],
             ),
-            const SizedBox(height: 12),
+            const Gap(12),
             Obx(() {
               final hr = controller.latestHeartRate.value;
               if (hr == null) {
@@ -165,7 +164,7 @@ class DashboardScreen extends StatelessWidget {
                       color: AppConstants.heartRateColor,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const Gap(4),
                   Text(
                     app_date_utils.DateUtils.getTimeAgo(hr.timestamp),
                     style: AppConstants.labelStyle,
@@ -187,19 +186,19 @@ class DashboardScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.health_and_safety, size: 64, color: Colors.grey),
-            const SizedBox(height: 24),
+            const Gap(24),
             const Text(
               'Health Connect Access Required',
               style: AppConstants.titleStyle,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 16),
+            const Gap(16),
             const Text(
               'Please grant permissions to view your health data',
               style: AppConstants.subtitleStyle,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
+            const Gap(24),
             ElevatedButton(
               onPressed: () => Get.toNamed('/permissions'),
               child: const Text('Grant Permissions'),
@@ -220,7 +219,7 @@ class DashboardScreen extends StatelessWidget {
       child: Row(
         children: [
           Icon(Icons.warning, color: AppConstants.errorColor),
-          const SizedBox(width: 12),
+          const Gap(12),
           Expanded(
             child: Text(
               message,

@@ -12,7 +12,7 @@ class PerformanceHUD extends StatelessWidget {
     final controller = Get.find<PerformanceController>();
 
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 50,
+      top: MediaQuery.of(context).padding.right + 200,
       right: 16,
       child: Obx(
         () => Container(
