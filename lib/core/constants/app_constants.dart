@@ -9,9 +9,9 @@ class AppConstants {
   // Anti-Plagiarism SALT
   static const String packageName = 'com.example.health_connect_dashboard';
   static const String firstCommitHash =
-      '187a25564aaf870e8ec68a66ca028ddf73746b1b';
+      'Ifc931543b341c7f4ae50d48ddba95399365f4272';
   static const String salt =
-      '2d662365ceb906957be219431571b09f56055b0f96bd43aeeb8fedf63202aa6a';
+      '0664d8c904a3679d3ae08ae9ef88770aa5b97246f56d4b8c4681f0c560d51bfa';
 
   // Chart Settings
   static const int stepsChartWindowMinutes = 60;
