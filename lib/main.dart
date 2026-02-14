@@ -11,6 +11,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
   SaltUtils.getSalt();
+  SaltUtils.verifySalt();
 
   runApp(const MyApp());
 }
